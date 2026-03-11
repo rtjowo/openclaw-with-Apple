@@ -88,13 +88,7 @@ def get_api(require_password=False):
 def cmd_login():
     """登录命令"""
     api = get_api(require_password=True)
-    try:
-        devices = list(api.devices)
-        print(f"📱 检测到 {len(devices)} 个设备")
-        for d in devices:
-            print(f'  - {d}')
-    except Exception:
-        pass
+    _verify_all_services(api)
     print("\n✅ 登录成功，session 已缓存。")
 
 
@@ -122,6 +116,7 @@ def cmd_verify(args):
 
     if not api.requires_2fa:
         print("✅ 不需要双重认证，已直接连接!")
+        _verify_all_services(api)
         return
 
     print(f"🔐 正在验证: {code}")
@@ -134,14 +129,48 @@ def cmd_verify(args):
         api.trust_session()
         print("✅ 已信任此设备会话")
 
+    # 关键：重新认证以刷新所有 service endpoints（照片、Drive 等）
+    print("🔄 正在初始化所有 iCloud 服务...")
+    try:
+        api.authenticate(force_refresh=True)
+    except Exception as e:
+        print(f"⚠️ 服务初始化警告: {e}")
+
+    _verify_all_services(api)
+    print("\n✅ 登录完成，session 已缓存。后续操作无需再输入密码。")
+
+
+def _verify_all_services(api):
+    """验证所有 iCloud 服务是否可用"""
+    services = []
+
+    # 设备
     try:
         devices = list(api.devices)
-        print(f"\n📱 检测到 {len(devices)} 个设备:")
+        services.append(f"📱 设备 ({len(devices)} 个)")
         for d in devices:
-            print(f'  - {d}')
-    except Exception:
-        pass
-    print("\n✅ 登录完成，session 已缓存。后续操作无需再输入密码。")
+            s = d.status()
+            print(f'  - {s.get("name", d)} ({s.get("deviceDisplayName", "?")})')
+    except Exception as e:
+        services.append(f"📱 设备 ❌ {e}")
+
+    # Drive
+    try:
+        items = list(api.drive.dir())
+        services.append(f"💾 iCloud Drive ({len(items)} 个根目录项)")
+    except Exception as e:
+        services.append(f"💾 iCloud Drive ❌ {e}")
+
+    # 照片
+    try:
+        albums = list(api.photos.albums)
+        services.append(f"📷 照片 ({len(albums)} 个相册)")
+    except Exception as e:
+        services.append(f"📷 照片 ❌ {e}")
+
+    print("\n📋 服务状态:")
+    for s in services:
+        print(f"  {s}")
 
 
 # ─── 照片 ─────────────────────────────────────────────
