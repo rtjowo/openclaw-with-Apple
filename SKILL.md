@@ -201,8 +201,13 @@ python icloud_tool.py photos download 1
 #### iCloud Drive
 
 ```bash
-python icloud_tool.py drive list
-python icloud_tool.py drive cd Downloads
+python icloud_tool.py drive list                      # 列出根目录
+python icloud_tool.py drive list Work/Projects        # 列出多级目录
+python icloud_tool.py drive cd Downloads              # 进入并列出文件夹
+python icloud_tool.py drive download Work/doc.pdf     # 下载文件到当前目录
+python icloud_tool.py drive download Work/doc.pdf ~/Desktop/doc.pdf  # 下载到指定路径
+python icloud_tool.py drive cat Work/notes.txt        # 查看文本文件内容
+python icloud_tool.py drive upload local.pdf Work     # 上传文件到指定文件夹
 ```
 
 #### 查找设备

@@ -195,32 +195,126 @@ def cmd_photos(api, args):
         print("可用: albums, list [N], download N")
 
 
+def _resolve_drive_path(drive, path_str):
+    """
+    解析 iCloud Drive 路径，支持 / 分隔的多级路径。
+    例如: "Work/Projects/doc.txt" → drive['Work']['Projects']['doc.txt']
+    """
+    node = drive
+    parts = [p for p in path_str.split('/') if p]
+    for part in parts:
+        try:
+            node = node[part]
+        except (KeyError, IndexError):
+            print(f"❌ 路径不存在: '{part}'（在 '{path_str}' 中）")
+            sys.exit(1)
+    return node
+
+
+def _list_node(node, label=""):
+    """列出一个 Drive 节点的内容"""
+    if label:
+        print(f'📂 {label}:\n')
+    else:
+        print('💾 iCloud Drive:\n')
+
+    items = list(node.dir())
+    for item_name in items:
+        child = node[item_name]
+        # 判断是文件还是文件夹
+        if hasattr(child, 'dir') and callable(child.dir):
+            try:
+                child.dir()
+                print(f'  📂 {item_name}/')
+            except Exception:
+                # 是文件
+                size = getattr(child, 'size', None)
+                size_str = f" ({size:,} bytes)" if size else ""
+                print(f'  📄 {item_name}{size_str}')
+        else:
+            print(f'  📄 {item_name}')
+    print(f'\n共 {len(items)} 个项目')
+
+
 def cmd_drive(api, args):
     """iCloud Drive 命令"""
+    from shutil import copyfileobj
     drive = api.drive
 
     if not args or args[0] == 'list':
-        print('💾 iCloud Drive:\n')
-        items = list(drive.dir())
-        for item in items:
-            print(f'  📂 {item}')
-        print(f'\n共 {len(items)} 个项目')
+        # list [路径]
+        if len(args) > 1:
+            path = args[1]
+            node = _resolve_drive_path(drive, path)
+            _list_node(node, path)
+        else:
+            _list_node(drive)
 
     elif args[0] == 'cd' and len(args) > 1:
-        folder_name = args[1]
+        path = args[1]
+        node = _resolve_drive_path(drive, path)
+        _list_node(node, path)
+
+    elif args[0] == 'download' and len(args) > 1:
+        path = args[1]
+        node = _resolve_drive_path(drive, path)
+        filename = path.split('/')[-1]
+
+        # 可选指定输出路径
+        output = args[2] if len(args) > 2 else filename
+
+        print(f'⬇️  正在下载: {path}')
+        with node.open(stream=True) as response:
+            with open(output, 'wb') as f:
+                copyfileobj(response.raw, f)
+
+        size = os.path.getsize(output)
+        if size > 1024 * 1024:
+            size_str = f"{size / 1024 / 1024:.1f} MB"
+        elif size > 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size} bytes"
+        print(f'✅ 已保存: {output} ({size_str})')
+
+    elif args[0] == 'cat' and len(args) > 1:
+        path = args[1]
+        node = _resolve_drive_path(drive, path)
+
+        print(f'📄 {path}:\n')
+        response = node.open()
+        # 尝试文本输出
         try:
-            folder = drive[folder_name]
-            print(f'📂 {folder_name}:\n')
-            items = list(folder.dir())
-            for item in items:
-                print(f'  📄 {item}')
-            print(f'\n共 {len(items)} 个项目')
-        except KeyError:
-            print(f'❌ 文件夹不存在: {folder_name}')
+            text = response.content.decode('utf-8')
+            print(text)
+        except UnicodeDecodeError:
+            print(f"⚠️ 文件不是文本格式，请用 download 命令下载")
+
+    elif args[0] == 'upload' and len(args) > 1:
+        local_file = args[1]
+        # 可选指定目标文件夹路径
+        target_folder = args[2] if len(args) > 2 else None
+
+        if not os.path.exists(local_file):
+            print(f"❌ 本地文件不存在: {local_file}")
+            return
+
+        if target_folder:
+            folder_node = _resolve_drive_path(drive, target_folder)
+        else:
+            folder_node = drive
+
+        filename = os.path.basename(local_file)
+        print(f'⬆️  正在上传: {local_file} → iCloud Drive/{target_folder or ""}/{filename}')
+
+        with open(local_file, 'rb') as f:
+            folder_node.upload(f)
+
+        print(f'✅ 上传完成: {filename}')
 
     else:
-        print(f"未知子命令: {args[0]}")
-        print("可用: list, cd <文件夹>")
+        print(f"未知子命令: {args[0] if args else '(空)'}")
+        print("可用: list [路径], cd <路径>, download <路径> [输出文件], cat <路径>, upload <本地文件> [目标文件夹]")
 
 
 def cmd_devices(api, args):
@@ -250,8 +344,11 @@ def show_help():
     download N           下载第 N 张照片
 
   drive                  iCloud Drive 功能
-    list                 列出根目录
-    cd <文件夹>          进入并列出文件夹内容
+    list [路径]          列出目录内容（支持多级路径如 Work/Docs）
+    cd <路径>            进入并列出文件夹内容
+    download <路径> [输出] 下载文件到本地
+    cat <路径>           查看文本文件内容
+    upload <本地文件> [目标文件夹]  上传文件
 
   devices                列出所有设备
 
