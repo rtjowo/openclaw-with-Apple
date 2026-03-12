@@ -1,3 +1,5 @@
 health_*.txt
 health_*.json
+tasks_latest.json
+notes_latest.json
 .codebuddy/

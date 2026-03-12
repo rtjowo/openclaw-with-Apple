@@ -375,7 +375,7 @@ def cmd_sync(args):
 
 
 def _ensure_icloud_dir(drive):
-    """确保 iCloud Drive/Shortcuts/Tasks/ 目录存在。"""
+    """确保 iCloud Drive/Shortcuts/Tasks/ 和 Shortcuts/Notes/ 目录存在。"""
     # 检查 Shortcuts 目录
     try:
         shortcuts = drive["Shortcuts"]
@@ -391,61 +391,91 @@ def _ensure_icloud_dir(drive):
         print("📁 创建 Tasks 目录...")
         shortcuts.mkdir("Tasks")
 
+    # 检查 Notes 子目录
+    try:
+        _ = shortcuts["Notes"]
+    except (KeyError, IndexError):
+        print("📁 创建 Notes 目录...")
+        shortcuts.mkdir("Notes")
+
 
 def _sync_upload(drive):
-    """上传本地 tasks.json 到 iCloud Drive（按日期归档，不覆盖历史）。
+    """上传本地 tasks.json 到 iCloud Drive（覆盖模式，按类型分文件夹）。
 
-    每次上传生成两个文件：
-    1. tasks_YYYY-MM-DD.json  — 当天的待办快照（历史永久保留）
-    2. tasks_latest.json      — 固定文件名，内容与当天相同（供快捷指令读取）
+    根据 target 字段分到两个独立文件夹：
+    - Shortcuts/Tasks/tasks_latest.json  — 提醒事项 (target=reminder)
+    - Shortcuts/Notes/notes_latest.json  — 备忘录 (target=note)
 
-    iPhone 快捷指令只需读 tasks_latest.json，导入后删除它。
-    tasks_YYYY-MM-DD.json 作为历史归档永久保留在 iCloud Drive 中。
+    每个文件夹只有一个文件，快捷指令直接读取，无需筛选。
     """
     data = _load_tasks()
+    pending = [t for t in data["tasks"] if t.get("status") != "done"]
 
-    # 只上传 pending 的任务
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    sync_data = {
-        "updated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-        "date": today_str,
-        "synced_from": "openclaw",
-        "tasks": [t for t in data["tasks"] if t.get("status") != "done"],
-    }
-
-    task_count = len(sync_data["tasks"])
-    if task_count == 0:
+    if not pending:
         print("📋 没有待处理的待办，跳过同步")
         return
 
-    target_folder = drive["Shortcuts"]["Tasks"]
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-    # 1. 上传日期归档文件: tasks_2026-03-11.json
-    archive_filename = f"tasks_{today_str}.json"
-    tmp_archive = os.path.join(TASKS_DIR, archive_filename)
-    with open(tmp_archive, "w", encoding="utf-8") as f:
-        json.dump(sync_data, f, ensure_ascii=False, indent=2)
-    try:
-        with open(tmp_archive, "rb") as f:
-            target_folder.upload(f)
-        print(f"📦 已归档: iCloud Drive/Shortcuts/Tasks/{archive_filename}")
-    finally:
-        if os.path.exists(tmp_archive):
-            os.remove(tmp_archive)
+    # 按 target 分类（默认归入 reminder）
+    reminders = [t for t in pending if t.get("target", "reminder") != "note"]
+    notes = [t for t in pending if t.get("target") == "note"]
 
-    # 2. 上传最新指针文件: tasks_latest.json（固定名，供快捷指令读取）
-    tmp_latest = os.path.join(TASKS_DIR, "tasks_latest.json")
-    with open(tmp_latest, "w", encoding="utf-8") as f:
-        json.dump(sync_data, f, ensure_ascii=False, indent=2)
+    tasks_folder = drive["Shortcuts"]["Tasks"]
+    notes_folder = drive["Shortcuts"]["Notes"]
+
+    # 上传提醒事项
+    if reminders:
+        _upload_file(tasks_folder, "tasks_latest.json", {
+            "updated_at": now_str,
+            "date": today_str,
+            "synced_from": "openclaw",
+            "type": "reminder",
+            "tasks": reminders,
+        })
+        print(f"⏰ 已同步 {len(reminders)} 项提醒事项 → Shortcuts/Tasks/tasks_latest.json")
+    else:
+        _delete_old_file(tasks_folder, "tasks_latest.json")
+        print("⏰ 无提醒事项，已清理旧文件")
+
+    # 上传备忘录
+    if notes:
+        _upload_file(notes_folder, "notes_latest.json", {
+            "updated_at": now_str,
+            "date": today_str,
+            "synced_from": "openclaw",
+            "type": "note",
+            "tasks": notes,
+        })
+        print(f"📝 已同步 {len(notes)} 条备忘录 → Shortcuts/Notes/notes_latest.json")
+    else:
+        _delete_old_file(notes_folder, "notes_latest.json")
+        print("📝 无备忘录，已清理旧文件")
+
+
+def _delete_old_file(folder, filename):
+    """删除 iCloud Drive 中的旧文件（如果存在）。"""
     try:
-        with open(tmp_latest, "rb") as f:
-            target_folder.upload(f)
-        print(f"☁️  已同步 {task_count} 项待办 → iCloud Drive/Shortcuts/Tasks/tasks_latest.json")
-        print(f"   iPhone 快捷指令将在下次运行时读取 tasks_latest.json")
-        print(f"   历史归档 {archive_filename} 已保留，不会被覆盖")
+        old_file = folder[filename]
+        old_file.delete()
+    except (KeyError, IndexError):
+        pass
+
+
+def _upload_file(folder, filename, data_dict):
+    """先删旧文件，再上传新文件到 iCloud Drive。"""
+    _delete_old_file(folder, filename)
+
+    tmp_path = os.path.join(TASKS_DIR, filename)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data_dict, f, ensure_ascii=False, indent=2)
+    try:
+        with open(tmp_path, "rb") as f:
+            folder.upload(f)
     finally:
-        if os.path.exists(tmp_latest):
-            os.remove(tmp_latest)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def _sync_download(drive):
