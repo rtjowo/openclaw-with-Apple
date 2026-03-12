@@ -1609,6 +1609,18 @@ def parse_args(args):
     return remaining, days
 
 
+def _cleanup_old_health_files(dirpath, keep_date_str):
+    """清理旧的健康数据文件，只保留指定日期的文件。"""
+    dirpath = Path(dirpath)
+    removed = 0
+    for f in dirpath.glob("health_*"):
+        if f.is_file() and keep_date_str not in f.name:
+            f.unlink()
+            removed += 1
+    if removed:
+        print(f"\n🗑️ 已清理 {removed} 个旧文件，仅保留 {keep_date_str} 的数据")
+
+
 def main():
     if len(sys.argv) < 2:
         print_usage()
@@ -1655,6 +1667,8 @@ def main():
             data = load_health_file(found)
             if data:
                 print_single_day_analysis(data)
+                # 清理旧文件：只保留今天的，删除其他 health_*.json/txt
+                _cleanup_old_health_files(dirpath, today_str)
         else:
             print(f"未找到今日数据文件: health_{today_str}.json/txt")
             print(f"目录: {dirpath}")
