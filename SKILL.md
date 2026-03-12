@@ -243,6 +243,15 @@ python scripts/generate_tasks_shortcut.py
 
 ## 💡 AI 日常行为规则
 
+### ⚠️ 最高优先级：必须实际执行命令
+
+> **你必须实际运行脚本命令来写入数据，不能只是口头回复"搞定了"！**
+> 
+> 识别到用户说了待办/备忘相关的话后，你必须：
+> 1. 在回复中调用 `tasks_tool.py add` 或 `icloud_calendar.py new` 等命令**实际执行**
+> 2. 确认命令执行成功后，再告知用户
+> 3. **绝对禁止**：不运行任何命令，只在文字回复中说"已添加"或列出日程表。这等于欺骗用户！
+
 ### Tasks 相关
 
 1. **主动识别（最重要）**：用户说的话只要涉及以下任何一种，**必须立即自动存储**，无需用户明确说"帮我记"：
@@ -253,7 +262,7 @@ python scripts/generate_tasks_shortcut.py
 
 2. **三种存储目标的判断规则（核心，严格执行）**：
 
-   用户说了一句话后，按以下决策树判断写入哪里：
+   用户说了一句话后，按以下决策树判断写入哪里，**并实际运行对应命令**：
 
    ```
    用户说的内容是什么类型？
@@ -261,36 +270,34 @@ python scripts/generate_tasks_shortcut.py
    ├─ 行动/事件类（开会、洗车、吃饭、取快递...）
    │   │
    │   ├─ 有具体时间点（"2点"、"14:00"、"早上8点"）
-   │   │   → ✅ 写日历（icloud_calendar.py new）
-   │   │   → ✅ 写提醒事项JSON（tasks_tool.py add --target reminder）
+   │   │   → ✅ 实际运行: python tasks_tool.py add "xxx" --date xxx --time xx:xx --target reminder
+   │   │   → ✅ 实际运行: python icloud_calendar.py new xxx xx:xx xx:xx "xxx"
    │   │
    │   └─ 没有具体时间点（"明天"、"晚上"、"下周"等模糊时间）
    │       → ❌ 不写日历（严禁编造时间！）
-   │       → ✅ 写提醒事项JSON（tasks_tool.py add --target reminder）
+   │       → ✅ 实际运行: python tasks_tool.py add "xxx" --date xxx --target reminder
    │
    └─ 知识/笔记/记录类（"记一下xxx"、想法、灵感、纪要、学到的东西...）
        → ❌ 不写日历
-       → ❌ 不写提醒事项JSON
-       → ✅ 写备忘录JSON（tasks_tool.py add --target note）
+       → ❌ 不写提醒事项
+       → ✅ 实际运行: python tasks_tool.py add "xxx" --target note --notes "内容"
    ```
 
-   ⛔ **严禁行为**：用户没说几点，AI 自己脑补一个时间写进日历（如把"明天去洗车"变成"14:00 洗车"）
+   ⛔ **严禁行为**：
+   - 用户没说几点，AI 自己脑补一个时间写进日历（如把"明天去洗车"变成"14:00 洗车"）
+   - 不执行任何命令，只在回复文字中说"已添加"或列日程表（这是欺骗用户！）
 
-   ✅ **完整示例**：
+   ✅ **完整示例（含实际要执行的命令）**：
 
-   | 用户说的话 | 日历 | 提醒事项JSON | 备忘录JSON |
-   |-----------|------|-------------|-----------|
-   | "明天2点开会" | ✅ 14:00 | ✅ | ❌ |
-   | "后天早上8点打太极拳" | ✅ 08:00 | ✅ | ❌ |
-   | "明天去洗车" | ❌ | ✅ | ❌ |
-   | "明天晚上去开会" | ❌（"晚上"不是具体时间） | ✅ | ❌ |
-   | "下周交报告" | ❌ | ✅ | ❌ |
-   | "记一下：useEffect依赖数组为空时只执行一次" | ❌ | ❌ | ✅ |
-   | "今天学到：Python的walrus运算符很好用" | ❌ | ❌ | ✅ |
-   | "会议纪要：决定用React重构前端" | ❌ | ❌ | ✅ |
+   | 用户说的话 | 必须执行的命令 |
+   |-----------|--------------|
+   | "明天2点开会" | `python tasks_tool.py add "开会" --date tomorrow --time 14:00 --target reminder` + `python icloud_calendar.py new tomorrow 14:00 15:00 "开会"` |
+   | "明天去洗车" | `python tasks_tool.py add "洗车" --date tomorrow --target reminder`（**不写日历**） |
+   | "明天晚上去开会" | `python tasks_tool.py add "开会" --date tomorrow --target reminder`（"晚上"不是具体时间，**不写日历**） |
+   | "记一下：useEffect依赖数组为空时只执行一次" | `python tasks_tool.py add "useEffect笔记" --target note --notes "依赖数组为空时只执行一次"` |
 
 3. **智能解析**：从自然语言中提取日期（"明天"、"下周三"）、时间（"下午2点"）、优先级（"重要"→high）
-4. **主动确认**：添加后简短确认，告知用户写了什么、怎么同步：
+4. **主动确认**：命令执行成功后，简短确认告知用户：
    - 写了提醒事项："已加到待办文件中，今晚十点自动同步至提醒事项 ✓"
    - 写了提醒事项+日历："已加到待办文件和日历中，待办今晚十点同步至提醒事项 ✓📅"
    - 写了备忘录："已加到备忘录文件中，今晚十点自动同步至备忘录 ✓"
