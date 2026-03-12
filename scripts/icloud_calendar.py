@@ -41,12 +41,17 @@ def get_client():
     app_password = os.environ.get('ICLOUD_APP_PASSWORD')
     
     if not username:
-        username = input("Apple ID: ")
+        print("❌ 未设置 ICLOUD_USERNAME 环境变量！")
+        print("   export ICLOUD_USERNAME=\"你的Apple ID邮箱\"")
+        sys.exit(1)
     if not app_password:
-        print("\n⚠️  日历功能需要应用专用密码")
-        print("   请在 https://appleid.apple.com 生成")
-        print("   (「登录与安全」→「应用专用密码」→「+」)")
-        app_password = input("\n应用专用密码 (格式: xxxx-xxxx-xxxx-xxxx): ")
+        print("❌ 未设置 ICLOUD_APP_PASSWORD 环境变量！")
+        print("\n⚠️  日历功能需要应用专用密码（非主密码）")
+        print("   1. 登录 https://appleid.apple.com")
+        print("   2. 进入「登录与安全」→「应用专用密码」→「+」")
+        print("   3. 生成后设置环境变量:")
+        print("      export ICLOUD_APP_PASSWORD=\"xxxx-xxxx-xxxx-xxxx\"")
+        sys.exit(1)
     
     print(f'📅 正在连接 iCloud 日历...')
     

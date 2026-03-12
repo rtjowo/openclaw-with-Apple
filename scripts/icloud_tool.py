@@ -64,19 +64,19 @@ def get_api(require_password=False):
         if api:
             print("✅ 通过缓存 session 连接成功\n")
             return api
-        print(f"⚠️ iCloud session 已过期或不可用（{error}），需要重新登录。\n")
-
-    if not username:
-        print("❌ iCloud 未登录！请先运行以下命令登录：")
-        print("   export ICLOUD_USERNAME=\"你的Apple ID邮箱\"")
-        print("   export ICLOUD_PASSWORD=\"你的密码\"")
-        print("   python scripts/icloud_tool.py login")
-        sys.exit(1)
-    if not password:
-        print("❌ iCloud 未登录！请设置密码环境变量：")
-        print("   export ICLOUD_PASSWORD=\"你的密码\"")
-        print("   python scripts/icloud_tool.py login")
-        sys.exit(1)
+        # session 不可用：如果有密码就静默 fallback，没密码才报错
+        if not username or not password:
+            print(f"❌ iCloud session 已过期或不可用（{error}）")
+            if not username:
+                print("   请设置环境变量：")
+                print("     export ICLOUD_USERNAME=\"你的Apple ID邮箱\"")
+                print("     export ICLOUD_PASSWORD=\"你的密码\"")
+                print("     python scripts/icloud_tool.py login")
+            else:
+                print("   请设置密码环境变量：")
+                print("     export ICLOUD_PASSWORD=\"你的密码\"")
+                print("     python scripts/icloud_tool.py login")
+            sys.exit(1)
 
     print(f'🍎 正在连接 iCloud{"(中国大陆)" if china else ""}...')
     api = PyiCloudService(username, password, china_mainland=china)
@@ -430,7 +430,7 @@ def cmd_find(api, args):
         device = _get_device(api, args[1] if len(args) > 1 else None)
         s = device.status()
         print(f'📍 正在定位: {s.get("name", "?")}...\n')
-        loc = device.location()
+        loc = device.location
         if loc:
             lat = loc.get('latitude', '?')
             lng = loc.get('longitude', '?')
@@ -465,7 +465,7 @@ def cmd_find(api, args):
             status_map = {'Charging': '充电中', 'NotCharging': '未充电', 'Charged': '已充满'}
             print(f'  充电: {status_map.get(bat_status, bat_status)}')
         print(f'  状态码: {s.get("deviceStatus", "?")}')
-        loc = device.location()
+        loc = device.location
         if loc and loc.get('latitude'):
             old = "⚠️ 旧位置" if loc.get('isOld') else "最新"
             print(f'  位置: {loc["latitude"]:.6f}, {loc["longitude"]:.6f} ({old})')
