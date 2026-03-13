@@ -453,6 +453,12 @@ def _sync_upload(drive):
         _delete_old_file(notes_folder, "notes_latest.json")
         print("📝 无备忘录，已清理旧文件")
 
+    # 推送完成后清空已同步的任务，保持每天都是全新的
+    synced_ids = {t["id"] for t in pending}
+    data["tasks"] = [t for t in data["tasks"] if t["id"] not in synced_ids]
+    _save_tasks(data)
+    print(f"🗑️ 已清空 {len(synced_ids)} 条已推送任务，本地重新开始")
+
 
 def _delete_old_file(folder, filename):
     """删除 iCloud Drive 中的旧文件（如果存在）。"""
